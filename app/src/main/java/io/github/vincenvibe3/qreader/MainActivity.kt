@@ -3,14 +3,17 @@ package io.github.vincenvibe3.qreader
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
-import androidx.core.view.ViewCompat
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
-import io.github.vincentvibe3.authenticator.Scanner
 import io.github.vincenvibe3.qreader.ui.theme.QReaderTheme
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -37,20 +40,34 @@ class MainActivity : ComponentActivity() {
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+//        enableEdgeToEdge(
+//            statusBarStyle = SystemBarStyle.auto(
+//                android.graphics.Color.TRANSPARENT,
+//                android.graphics.Color.TRANSPARENT,
+//            ),
+//            SystemBarStyle.auto(
+//                android.graphics.Color.TRANSPARENT,
+//                android.graphics.Color.TRANSPARENT,
+//            )
+//        )
         val windowInsetsController =
             WindowCompat.getInsetsController(window, window.decorView)
 
-        windowInsetsController.isAppearanceLightNavigationBars = false
-
         super.onCreate(savedInstanceState)
         setContent {
-            QReaderTheme {
-                // A surface container using the 'background' color from the theme
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    Scanner()
+            Box(Modifier.safeDrawingPadding()) {
+                // the rest of the app
+             QReaderTheme {
+                    // A surface container using the 'background' color from the theme
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        Scanner()
+                    }
                 }
             }
+
+
         }
     }
 

@@ -1,21 +1,11 @@
-package io.github.vincentvibe3.authenticator
+package io.github.vincenvibe3.qreader
 
-import android.app.Activity
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.drawable.Drawable
-import android.os.Build
-import android.os.Bundle
 import android.util.Log
-import android.view.View
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -27,66 +17,66 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.PermanentDrawerSheet
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
 import io.github.vincentvibe3.authenticator.scanner.QrScanner
-import io.github.vincenvibe3.qreader.MainActivity
-import io.github.vincenvibe3.qreader.SchemeIdentifier
-import io.github.vincenvibe3.qreader.ui.theme.QReaderTheme
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import kotlin.math.abs
 
 @Composable
 fun CameraPreview(onQrScanned: (String)->Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    var camera:Camera? by remember {
+        mutableStateOf(null)
+    }
+    var scale by remember { mutableStateOf(
+        camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1f
+    ) }
+    val zoomRatioMin = camera?.cameraInfo?.zoomState?.value?.minZoomRatio ?: 0f
+    val zoomRatioMax = camera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 0f
+    val zoomRatioInterval = zoomRatioMax - zoomRatioMin
+    val previewTransform = rememberTransformableState{ zoomChange, offsetChange, rotationChange ->
+        scale = camera?.cameraInfo?.zoomState?.value?.zoomRatio?.let {
+            it * zoomChange
+        } ?: 0f
+    }
+    LaunchedEffect(key1 = scale){
+        camera?.cameraControl?.setZoomRatio(scale)
+    }
 
-    Box(modifier = Modifier.fillMaxSize()){
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .transformable(previewTransform)){
         AndroidView(
             modifier = Modifier
                 .fillMaxHeight()
@@ -123,7 +113,7 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
                         cameraProvider.unbindAll()
 
                         // Bind use cases to camera
-                        cameraProvider.bindToLifecycle(
+                        camera = cameraProvider.bindToLifecycle(
                             lifecycleOwner, cameraSelector, preview, imageAnalysis)
 
                     } catch(exc: Exception) {
@@ -182,21 +172,30 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
                 alpha = 0.5f
             )
         })
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset()
-                .fillMaxHeight(0.5f),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ){
-            Text(
-                "Scan the QR code \nby placing it in the square",
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset()
+                    .fillMaxHeight(0.5f),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ){
+                Text(
+                    "Scan the QR code \nby placing it in the square",
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Text(text = "$scale", color = Color.White)
+            LinearProgressIndicator((scale-zoomRatioMin)/zoomRatioInterval)
+            Button(onClick = {
+                val currentTorch = camera?.cameraInfo?.torchState?.value ?: 0
+                camera?.cameraControl?.enableTorch(currentTorch == 0)
+            }) {
+                Text(text = "Flashlight")
+            }
         }
-
     }
 
 
