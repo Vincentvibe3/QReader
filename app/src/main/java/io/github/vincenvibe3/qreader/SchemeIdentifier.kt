@@ -9,7 +9,7 @@ object SchemeIdentifier {
     fun identify(data:String): PayloadTypes {
         return if (data.startsWith("https://")||data.startsWith("http://")){
             PayloadTypes.LINK
-        } else if (data.startsWith("WIFI")){
+        } else if (data.startsWith("WIFI:")){
             PayloadTypes.WIFI
         } else if (data.startsWith("otpauth://")){
             PayloadTypes.OTP

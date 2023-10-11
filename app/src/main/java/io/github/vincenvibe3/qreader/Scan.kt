@@ -1,6 +1,12 @@
 package io.github.vincenvibe3.qreader
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Context.CLIPBOARD_SERVICE
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -12,29 +18,37 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -42,19 +56,58 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import io.github.vincentvibe3.authenticator.scanner.QrScanner
-import kotlin.math.abs
+
+fun setupCamera(
+    context: Context,
+    lifecycleOwner:LifecycleOwner,
+    preview: Preview,
+    onScan:(String, String)->Unit,
+    onCameraSet: (Camera)->Unit
+){
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    cameraProviderFuture.addListener({
+        // Used to bind the lifecycle of cameras to the lifecycle owner
+        val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+        val imageAnalysis = ImageAnalysis.Builder()
+            .build()
+            .apply {
+                setAnalyzer(MainActivity.imageProcessingExecutor, QrScanner(onScan))
+            }
+
+
+        // Select back camera as a default
+        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            // Unbind use cases before rebinding
+            cameraProvider.unbindAll()
+
+            // Bind use cases to camera
+            val camera = cameraProvider.bindToLifecycle(
+                lifecycleOwner, cameraSelector, preview, imageAnalysis)
+            onCameraSet(camera)
+        } catch(exc: Exception) {
+            Log.e(MainActivity.TAG, "Use case binding failed", exc)
+        }
+
+    }, ContextCompat.getMainExecutor(context))
+}
 
 @Composable
-fun CameraPreview(onQrScanned: (String)->Unit) {
+fun CameraPreview(onQrScanned: (String, String)->Unit, onCameraReady: (Camera)->Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var camera:Camera? by remember {
         mutableStateOf(null)
@@ -62,9 +115,6 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
     var scale by remember { mutableStateOf(
         camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1f
     ) }
-    val zoomRatioMin = camera?.cameraInfo?.zoomState?.value?.minZoomRatio ?: 0f
-    val zoomRatioMax = camera?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 0f
-    val zoomRatioInterval = zoomRatioMax - zoomRatioMin
     val previewTransform = rememberTransformableState{ zoomChange, offsetChange, rotationChange ->
         scale = camera?.cameraInfo?.zoomState?.value?.zoomRatio?.let {
             it * zoomChange
@@ -76,7 +126,8 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
 
     Box(modifier = Modifier
         .fillMaxSize()
-        .transformable(previewTransform)){
+        .transformable(previewTransform)
+    ){
         AndroidView(
             modifier = Modifier
                 .fillMaxHeight()
@@ -84,43 +135,16 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
             factory = { context ->
                 val previewView = PreviewView(context)
 
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-
-                cameraProviderFuture.addListener({
-                    // Used to bind the lifecycle of cameras to the lifecycle owner
-                    val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-                    // Preview
-                    val preview = Preview.Builder()
-                        .build()
-                        .apply {
-                            setSurfaceProvider(previewView.surfaceProvider)
-                        }
-
-
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .build()
-                        .apply {
-                            setAnalyzer(MainActivity.imageProcessingExecutor, QrScanner(onQrScanned))
-                        }
-
-
-                    // Select back camera as a default
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                    try {
-                        // Unbind use cases before rebinding
-                        cameraProvider.unbindAll()
-
-                        // Bind use cases to camera
-                        camera = cameraProvider.bindToLifecycle(
-                            lifecycleOwner, cameraSelector, preview, imageAnalysis)
-
-                    } catch(exc: Exception) {
-                        Log.e(MainActivity.TAG, "Use case binding failed", exc)
+                // Preview
+                val preview = Preview.Builder()
+                    .build()
+                    .apply {
+                        setSurfaceProvider(previewView.surfaceProvider)
                     }
-
-                }, ContextCompat.getMainExecutor(context))
+                setupCamera(context, lifecycleOwner, preview, onQrScanned){
+                    camera = it
+                    onCameraReady(it)
+                }
                 previewView
             })
 
@@ -173,10 +197,11 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
             )
         })
         Column {
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .offset()
+//                    .offset()
                     .fillMaxHeight(0.5f),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
@@ -186,14 +211,6 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
                     color = Color.White,
                     textAlign = TextAlign.Center
                 )
-            }
-            Text(text = "$scale", color = Color.White)
-            LinearProgressIndicator((scale-zoomRatioMin)/zoomRatioInterval)
-            Button(onClick = {
-                val currentTorch = camera?.cameraInfo?.torchState?.value ?: 0
-                camera?.cameraControl?.enableTorch(currentTorch == 0)
-            }) {
-                Text(text = "Flashlight")
             }
         }
     }
@@ -206,31 +223,18 @@ fun CameraPreview(onQrScanned: (String)->Unit) {
 @Composable
 fun Scanner() {
     val context = LocalContext.current
-//    val systemUiController = rememberSystemUiController()
-//    DisposableEffect(systemUiController) {
-//        // Update all of the system bar colors to be transparent, and use
-//        // dark icons if we're in light theme
-//        systemUiController.setSystemBarsColor(
-//            color = Color.Transparent,
-//            darkIcons = false
-//        )
-//
-//        systemUiController.setNavigationBarColor(
-//            color = Color.Transparent,
-//            darkIcons = false
-//        )
-//
-//        // setStatusBarColor() and setNavigationBarColor() also exist
-//
-//        onDispose {}
-//    }
     val initialCameraPermission = ContextCompat.checkSelfPermission(
         context, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     var permissionsOk by remember {
         mutableStateOf(initialCameraPermission)
     }
-
+    var camera:Camera? by remember {
+        mutableStateOf(null)
+    }
     var currentData:String? by remember {
+        mutableStateOf(null)
+    }
+    var format:String? by remember {
         mutableStateOf(null)
     }
     val launcher = rememberLauncherForActivityResult(
@@ -245,80 +249,195 @@ fun Scanner() {
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 bottomBar = {
-                    AnimatedVisibility(visible = currentData!=null, enter = slideInVertically{
-                        it/2
-                    }+ fadeIn(), exit = slideOutVertically { it/2 }+ fadeOut()) {
-                        Card(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(10.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(20.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(text = "QR Code", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                    IconButton(onClick = { currentData=null }) {
-                                        Icon(Icons.Default.Close, contentDescription = null)
-                                    }
-                                }
-                                val data = currentData ?: ""
-                                when(SchemeIdentifier.identify(data)){
-                                    SchemeIdentifier.PayloadTypes.WIFI -> {
-                                        val ssid = data.split(";")[0].split(":")[2]
-                                        val password = data.split(";")[2].split(":")[1]
-                                        Text(text = "SSID: $ssid")
-                                        var showPassword by remember {
-                                            mutableStateOf(false)
+                    var offset by remember {
+                        mutableStateOf(0f)
+                    }
+                    val cornerRadius by animateDpAsState(targetValue = if (currentData==null){10.dp} else {0.dp}, label="cornerAnimation")
+                    val transitionState by remember {
+                        mutableStateOf(
+                            MutableTransitionState(false)
+                        )
+                    }
+                    // When dismissed reset offset and data
+                    LaunchedEffect(key1 = transitionState.isIdle){
+                        if (!transitionState.currentState&&transitionState.isIdle){
+                            offset = 0f
+                            currentData = null
+                        }
+                    }
+                    // Starts animation to display info when not data is not null
+                    LaunchedEffect(key1 = currentData!=null){
+                        if (currentData!=null){
+                            transitionState.targetState = true
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.Bottom) {
+                        AnimatedVisibility(visibleState = transitionState, enter = slideInVertically{
+                            it/2
+                        }+ fadeIn(), exit = slideOutVertically { it/2 }+ fadeOut())  {
+                            Card(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .offset(y = offset.dp)
+                                    .animateContentSize()
+                                    .pointerInput(Unit) {
+                                        this.detectVerticalDragGestures({
+
+                                        }, {
+                                            if (offset > 50) {
+                                                transitionState.targetState = false
+                                            } else {
+                                                offset = 0f
+                                            }
+                                        }) { change, dragAmount ->
+                                            val next = offset + dragAmount
+                                            if (next >= 0f) {
+                                                offset += dragAmount
+                                            }
                                         }
-                                        val passwordText by remember {
-                                            derivedStateOf {
-                                                if (showPassword){
-                                                    password
-                                                } else {
-                                                    (1..password.length).joinToString("") {
-                                                        "•"
+                                    },
+                                shape = RoundedCornerShape(10.dp, 10.dp),
+                                colors = CardDefaults.elevatedCardColors()
+                            ) {
+                                Column(Modifier.padding(20.dp, 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.Center){
+                                        Spacer(modifier = Modifier
+                                            .clip(
+                                                RoundedCornerShape(5.dp)
+                                            )
+                                            .background(Color.Gray)
+                                            .width(50.dp)
+                                            .height(5.dp))
+                                    }
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = format?:"",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 18.sp
+                                        )
+//                                        IconButton(onClick = { currentData = null }) {
+//                                            Icon(
+//                                                Icons.Default.Close,
+//                                                contentDescription = null
+//                                            )
+//                                        }
+                                    }
+                                    val data = currentData ?: ""
+                                    when (SchemeIdentifier.identify(data)) {
+                                        SchemeIdentifier.PayloadTypes.WIFI -> {
+                                            val wifiInfo = WifiParser.parse(data)
+                                            Text(text = "SSID: ${wifiInfo.ssid}")
+                                            var showPassword by remember {
+                                                mutableStateOf(false)
+                                            }
+                                            val passwordText by remember {
+                                                derivedStateOf {
+                                                    if (showPassword) {
+                                                        wifiInfo.password
+                                                    } else {
+                                                        (1..(wifiInfo.password?.length ?: 0)).joinToString("") {
+                                                            "•"
+                                                        }
                                                     }
                                                 }
                                             }
+                                            Row {
+                                                Text(text = "Password: $passwordText")
+                                                Button(onClick = {
+                                                    showPassword = !showPassword
+                                                }) {
+                                                    Icon(Icons.Default.Lock, null)
+                                                }
+                                            }
+                                            Text(text = "Authentication Type: ${wifiInfo.auth}")
+                                            Text(text = "Hidden: ${wifiInfo.hidden}")
                                         }
-                                        Row {
-                                            Text(text = "Password: $passwordText")
-                                            Button(onClick = { showPassword=!showPassword }) {
-                                                Text("Show password")
+
+                                        SchemeIdentifier.PayloadTypes.LINK -> {
+                                            Text(text = data)
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(
+                                                    10.dp
+                                                )
+                                            ) {
+                                                Button(onClick = {
+                                                    val browserIntent = Intent(
+                                                        Intent.ACTION_VIEW,
+                                                        Uri.parse(data)
+                                                    )
+                                                    context.startActivity(browserIntent)
+                                                }) {
+                                                    Text(text = "Open Link")
+                                                }
+                                                TextButton(onClick = {
+                                                    val clipboardManager: ClipboardManager =
+                                                        context.getSystemService(
+                                                            CLIPBOARD_SERVICE
+                                                        ) as ClipboardManager
+                                                    val clipData =
+                                                        ClipData.newPlainText("Link", data)
+                                                    clipboardManager.setPrimaryClip(clipData)
+                                                }) {
+                                                    Text(text = "Copy to Clipboard")
+                                                }
                                             }
                                         }
-                                    }
-                                    SchemeIdentifier.PayloadTypes.LINK -> {
-                                        Text(text = data)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            Button(onClick = { /*TODO*/ }) {
-                                                Text(text = "Open Link")
-                                            }
-                                            TextButton(onClick = { /*TODO*/ }) {
+
+                                        else -> {
+                                            Text(text = data)
+                                            Button(onClick = {
+                                                val clipboardManager: ClipboardManager =
+                                                    context.getSystemService(
+                                                        CLIPBOARD_SERVICE
+                                                    ) as ClipboardManager
+                                                val clipData =
+                                                    ClipData.newPlainText("Link", data)
+                                                clipboardManager.setPrimaryClip(clipData)
+                                            }) {
                                                 Text(text = "Copy to Clipboard")
                                             }
-                                        }
-                                    }
-                                    else -> {
-                                        Text(text = data)
-                                        TextButton(onClick = { /*TODO*/ }) {
-                                            Text(text = "Copy to Clipboard")
                                         }
                                     }
                                 }
                             }
                         }
+                        Card(
+                            Modifier
+                                .fillMaxWidth(),
+                            shape = RoundedCornerShape(cornerRadius, cornerRadius)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .animateContentSize(),
+//                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(
+                                    Modifier
+                                        .navigationBarsPadding()
+                                        .padding(10.dp)
+                                        .fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    IconButton(onClick = {
+                                        val currentTorch = camera?.cameraInfo?.torchState?.value ?: 0
+                                        camera?.cameraControl?.enableTorch(currentTorch == 0)
+                                    }) {
+                                        Icon(painterResource(id = R.drawable.flashlight), contentDescription = null, tint=MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                        }
                     }
+//                    }
                 }
             ) { _ ->
-                CameraPreview{
-                    currentData = it
+                CameraPreview({ data, codeFormat ->
+                    currentData = data
+                    format = codeFormat
+                }){
+                    camera = it
                 }
             }
 
