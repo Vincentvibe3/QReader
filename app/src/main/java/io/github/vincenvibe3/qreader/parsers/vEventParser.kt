@@ -21,6 +21,7 @@ object vEventParser {
         val fields = HashMap<String, Field>()
         val lines = data.split("\n")
         var currentField:Field? = null
+        var vEventStarted = false
         lines.forEach { line ->
             if (line.startsWith(" ")){
                 currentField?.value+=line.removePrefix(" ")
@@ -28,8 +29,10 @@ object vEventParser {
                 currentField?.value+=line.removePrefix("\t")
             }
             else {
-                currentField?.let {
-                    fields[it.fieldName] = it
+                if (vEventStarted) {
+                    currentField?.let {
+                        fields[it.fieldName] = it
+                    }
                 }
                 val paramDelimiter = line.indexOfFirst { it==';' }
                 val valueDelimiter = line.indexOfFirst { it==':' }
@@ -47,12 +50,17 @@ object vEventParser {
                         line.substring(valueDelimiter)
                     )
                 }
+                val field = currentField
+                if (field!=null&&field.fieldName == "BEGIN"&&field.value=="VEVENT"){
+                    vEventStarted = true
+                }
             }
-            currentField?.let {
-                fields[it.fieldName] = it
+            if (vEventStarted) {
+                currentField?.let {
+                    fields[it.fieldName] = it
+                }
             }
             val title = fields["SUMMARY"]
-            fields["SUMMARY"]
             fields["LOCATION"]
             fields["DESCRIPTION"]
             fields["DTSTART"]
@@ -60,11 +68,22 @@ object vEventParser {
             fields["CLASS"]
             fields["RRULE"]
             fields["TRANSPARENT"]
-            Event(
+            fields["ATTENDEE"]
 
-            )
         }
+        return null
+    }
 
+
+
+    fun getAttendees(fieldString:String){
+
+    }
+
+    fun checkAllDay(start:String, end:String):Boolean  {
+        val startDay = start.substring(start.indices.last-2, start.indices.last)
+        val endDay = start.substring(end.indices.last-2, end.indices.last)
+        return startDay.toInt()==endDay.toInt()-1
     }
 
 }
