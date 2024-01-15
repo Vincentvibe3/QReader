@@ -51,7 +51,18 @@ object vEventParser {
             currentField?.let {
                 fields[it.fieldName] = it
             }
+            val title = fields["SUMMARY"]
+            fields["SUMMARY"]
+            fields["LOCATION"]
+            fields["DESCRIPTION"]
+            fields["DTSTART"]
+            fields["DTEND"]
+            fields["CLASS"]
+            fields["RRULE"]
+            fields["TRANSPARENT"]
+            Event(
 
+            )
         }
 
     }
