@@ -1,4 +1,4 @@
-package io.github.vincentvibe3.authenticator.scanner
+package io.github.vincenvibe3.qreader
 
 import android.util.Log
 import androidx.camera.core.ImageAnalysis

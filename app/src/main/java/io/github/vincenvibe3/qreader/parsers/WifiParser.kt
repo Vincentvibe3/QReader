@@ -1,4 +1,4 @@
-package io.github.vincenvibe3.qreader
+package io.github.vincenvibe3.qreader.parsers
 
 object WifiParser {
 
